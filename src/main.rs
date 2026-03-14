@@ -1,22 +1,11 @@
 
 use jamcounter::config::read_config;
-use jamcounter::scraping::{ForumPost, read_and_parse_page};
 use jamcounter::ai::LlmClient;
-use jamcounter::ai::scanner::{extract_names, VideoGame};
-use jamcounter::clustering::cluster_data;
-use jamcounter::clustering::games::{game_comparison_score, COMPARE_THRESHOLD};
-
-use anyhow::anyhow;
-use serde::{Deserialize, Serialize};
+use jamcounter::runner::run_vote_counts_pipeline;
 
 use std::env;
+use std::fs::File;
 use std::process::ExitCode;
-
-#[derive(Debug, Clone, Serialize, Deserialize, Hash, PartialEq, Eq)]
-pub struct ExtractedPost {
-  pub author: String,
-  pub ranks: Vec<VideoGame>,
-}
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<ExitCode> {
@@ -29,46 +18,15 @@ async fn main() -> anyhow::Result<ExitCode> {
     return Ok(ExitCode::FAILURE);
   }
   let url = &args[1];
-  //let games = read_and_extract_from_posts(&llm, url).await?;
-  //dbg!(&games);
+  let result = run_vote_counts_pipeline(&llm, url).await?;
 
-  // For testing, dump to file
-  //serde_json::to_writer(&std::fs::File::create("games.json")?, &games)?;
-  //println!("Written to games.json");
-
-  let games: Vec<ExtractedPost> = serde_json::from_reader(std::fs::File::open("games.json")?)?;
-  let flattened_games = games.clone().into_iter().flat_map(|e| e.ranks).collect::<Vec<_>>();
-
-  let cluster_set = cluster_data(flattened_games, game_comparison_score, COMPARE_THRESHOLD);
-  for cluster in cluster_set.clusters() {
-    dbg!(&cluster);
+  println!("Jam Results");
+  for (i, game) in result.final_rankings.iter().enumerate() {
+    println!("{}. {} by {} ({})", i + 1, game.title(), game.author(), game.score);
   }
+
+  println!("Writing full results to results.json");
+  serde_json::to_writer_pretty(File::create("results.json")?, &result)?;
 
   Ok(ExitCode::SUCCESS)
-}
-
-async fn read_and_extract_from_posts(llm: &LlmClient, url: &str) -> anyhow::Result<Vec<ExtractedPost>> {
-  let posts = read_and_parse_page(url).await?;
-  let mut posts = posts.into_iter()
-    .map(|opt_post| opt_post.ok_or_else(|| anyhow!("Failed to parse post")))
-    .collect::<Result<Vec<_>, _>>()?;
-  posts.remove(0); // Remove the instructions post
-  for post in &mut posts {
-    if let Some(idx) = post.text.find("Comments:") {
-      post.text = post.text[..idx].to_string();
-    }
-    post.text = post.text.chars().take(6_000).collect();
-  }
-
-  let games = extract_games_from_posts(&llm, posts).await?;
-  Ok(games)
-}
-
-async fn extract_games_from_posts(llm: &LlmClient, posts: Vec<ForumPost>) -> anyhow::Result<Vec<ExtractedPost>> {
-  let mut extracted = Vec::with_capacity(posts.len());
-  for post in posts {
-    let names = extract_names(llm, &post.text).await?;
-    extracted.push(ExtractedPost { author: post.author, ranks: names });
-  }
-  Ok(extracted)
 }

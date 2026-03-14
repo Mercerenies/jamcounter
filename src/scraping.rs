@@ -22,7 +22,7 @@ pub fn parse_posts(html: &Html) -> Vec<Option<ForumPost>> {
 
 fn parse_post(post: ElementRef) -> Option<ForumPost> {
   let author_elt = post.select(&Selector::parse(".message-name").ok()?).next()?;
-  let content_elt = post.select(&Selector::parse(".message-cell--main").ok()?).next()?;
+  let content_elt = post.select(&Selector::parse(".message-userContent").ok()?).next()?;
   Some(ForumPost {
     author: author_elt.text().collect(),
     text: content_elt.text().collect(),

@@ -6,7 +6,7 @@ use ordered_float::OrderedFloat;
 
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::ops::Index;
+use std::ops::{Index, Range};
 
 #[derive(Debug)]
 pub struct ClusterSet<T> {
@@ -34,6 +34,10 @@ impl<T> ClusterSet<T> {
 
   pub fn clusters(&self) -> impl Iterator<Item = (usize, &Cluster<T>)> + '_ {
     self.clusters.iter().enumerate()
+  }
+
+  pub fn cluster_indices(&self) -> Range<usize> {
+    0..self.len()
   }
 }
 

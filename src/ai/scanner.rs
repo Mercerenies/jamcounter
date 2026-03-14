@@ -33,9 +33,12 @@ pub async fn extract_names(client: &LlmClient, post_content: &str) -> anyhow::Re
       { "title": ..., "author": ... },
       ...
     ]
-
-    If the post does not list any games, just return "[]".
     ```
+
+    Do not include the author's name in the "title" field. Keep in mind that a game might have multiple
+    authors. In that case, include all authors in one string, separated by commas (NOT in a JSON sublist).
+
+    If the post does not attempt to rank any games, just ignore its contents and return "[]".
   "#;
 
   let messages = [
@@ -46,5 +49,19 @@ pub async fn extract_names(client: &LlmClient, post_content: &str) -> anyhow::Re
   let response = client.chat(&messages).await?.replace("```json", "").replace("```", "");
   let response: Vec<VideoGame> = serde_json::from_str(&response)
     .with_context(|| format!("Response: {response}"))?;
+
+  // Do a tiny bit of data cleanup here, based on common responses
+  // I've seen from the AI.
+  let response: Vec<VideoGame> = response.into_iter()
+    .map(remove_author_name_from_title)
+    .collect();
+
   Ok(response)
+}
+
+fn remove_author_name_from_title(mut game: VideoGame) -> VideoGame {
+  if game.title.ends_with(format!(" by {}", game.author).as_str()) {
+    game.title.truncate(game.title.len() - game.author.len() - 4);
+  }
+  game
 }
