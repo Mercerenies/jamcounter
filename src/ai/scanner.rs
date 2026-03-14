@@ -1,6 +1,7 @@
 
 use super::{LlmClient, Message};
 
+use anyhow::Context;
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -43,6 +44,7 @@ pub async fn extract_names(client: &LlmClient, post_content: &str) -> anyhow::Re
     Message::user(post_content),
   ];
   let response = client.chat(&messages).await?.replace("```json", "").replace("```", "");
-  let response: Vec<VideoGame> = serde_json::from_str(&response)?;
+  let response: Vec<VideoGame> = serde_json::from_str(&response)
+    .with_context(|| format!("Response: {response}"))?;
   Ok(response)
 }
