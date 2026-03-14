@@ -4,7 +4,7 @@ use super::{LlmClient, Message};
 use anyhow::Context;
 use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct VideoGame {
   pub title: String,
   pub author: String,

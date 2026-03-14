@@ -3,6 +3,8 @@ use jamcounter::config::read_config;
 use jamcounter::scraping::{ForumPost, read_and_parse_page};
 use jamcounter::ai::LlmClient;
 use jamcounter::ai::scanner::{extract_names, VideoGame};
+use jamcounter::clustering::cluster_data;
+use jamcounter::clustering::games::{game_comparison_score, COMPARE_THRESHOLD};
 
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
@@ -10,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::process::ExitCode;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct ExtractedPost {
   pub author: String,
   pub ranks: Vec<VideoGame>,
@@ -27,12 +29,20 @@ async fn main() -> anyhow::Result<ExitCode> {
     return Ok(ExitCode::FAILURE);
   }
   let url = &args[1];
-  let games = read_and_extract_from_posts(&llm, url).await?;
-  dbg!(&games);
+  //let games = read_and_extract_from_posts(&llm, url).await?;
+  //dbg!(&games);
 
   // For testing, dump to file
-  serde_json::to_writer(&std::fs::File::create("games.json")?, &games)?;
-  println!("Written to games.json");
+  //serde_json::to_writer(&std::fs::File::create("games.json")?, &games)?;
+  //println!("Written to games.json");
+
+  let games: Vec<ExtractedPost> = serde_json::from_reader(std::fs::File::open("games.json")?)?;
+  let flattened_games = games.clone().into_iter().flat_map(|e| e.ranks).collect::<Vec<_>>();
+
+  let cluster_set = cluster_data(flattened_games, game_comparison_score, COMPARE_THRESHOLD);
+  for cluster in cluster_set.clusters() {
+    dbg!(&cluster);
+  }
 
   Ok(ExitCode::SUCCESS)
 }
