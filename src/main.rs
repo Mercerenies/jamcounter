@@ -5,11 +5,12 @@ use jamcounter::ai::LlmClient;
 use jamcounter::ai::scanner::{extract_names, VideoGame};
 
 use anyhow::anyhow;
+use serde::{Deserialize, Serialize};
 
 use std::env;
 use std::process::ExitCode;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractedPost {
   pub author: String,
   pub ranks: Vec<VideoGame>,
@@ -26,6 +27,17 @@ async fn main() -> anyhow::Result<ExitCode> {
     return Ok(ExitCode::FAILURE);
   }
   let url = &args[1];
+  let games = read_and_extract_from_posts(&llm, url).await?;
+  dbg!(&games);
+
+  // For testing, dump to file
+  serde_json::to_writer(&std::fs::File::create("games.json")?, &games)?;
+  println!("Written to games.json");
+
+  Ok(ExitCode::SUCCESS)
+}
+
+async fn read_and_extract_from_posts(llm: &LlmClient, url: &str) -> anyhow::Result<Vec<ExtractedPost>> {
   let posts = read_and_parse_page(url).await?;
   let mut posts = posts.into_iter()
     .map(|opt_post| opt_post.ok_or_else(|| anyhow!("Failed to parse post")))
@@ -39,9 +51,7 @@ async fn main() -> anyhow::Result<ExitCode> {
   }
 
   let games = extract_games_from_posts(&llm, posts).await?;
-  dbg!(&games);
-
-  Ok(ExitCode::SUCCESS)
+  Ok(games)
 }
 
 async fn extract_games_from_posts(llm: &LlmClient, posts: Vec<ForumPost>) -> anyhow::Result<Vec<ExtractedPost>> {
