@@ -23,7 +23,7 @@ impl LlmClient {
   pub fn from_config(config: &Config) -> LlmClient {
     LlmClient::new(
       Credentials::new(&config.openai_api_key, &config.openai_url),
-      config.model.clone(),
+      config.llm_model.clone(),
     )
   }
 

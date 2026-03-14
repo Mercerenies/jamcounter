@@ -12,6 +12,8 @@ async fn main() -> anyhow::Result<ExitCode> {
   let config = read_config()?;
   let llm = LlmClient::from_config(&config);
 
+  println!("Using {} model {}", config.openai_url, config.llm_model);
+
   if fs::exists(&config.output_path)? {
     anyhow::bail!("Output file already exists: {}", config.output_path);
   }

@@ -12,7 +12,7 @@ pub struct Config {
   #[serde(default = "default_openai_url")]
   pub openai_url: String,
   #[serde(default = "default_model")]
-  pub model: String,
+  pub llm_model: String,
 }
 
 fn default_output_path() -> String {
