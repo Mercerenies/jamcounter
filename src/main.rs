@@ -1,11 +1,10 @@
 
 use jamcounter::config::read_config;
-use jamcounter::scraping::{read_and_parse_page, ForumPost};
+use jamcounter::scraping::{read_and_parse_page};
 use jamcounter::ai::LlmClient;
-use jamcounter::ai::classifier::ask_if_voting_post;
+use jamcounter::ai::scanner::extract_names;
 
 use anyhow::anyhow;
-use openai::OpenAiError;
 
 use std::env;
 use std::process::ExitCode;
@@ -26,21 +25,11 @@ async fn main() -> anyhow::Result<ExitCode> {
     .map(|opt_post| opt_post.ok_or_else(|| anyhow!("Failed to parse post")))
     .collect::<Result<Vec<_>, _>>()?;
   posts.remove(0); // Remove the instructions post
-  let posts = filter_to_relevant_posts(&llm, &posts).await?;
+  for post in posts {
+    println!("{}", post.author);
+    let names = extract_names(&llm, &post.text).await?;
+    dbg!(names);
+  }
 
   Ok(ExitCode::SUCCESS)
-}
-
-async fn filter_to_relevant_posts(client: &LlmClient, posts: &[ForumPost]) -> Result<Vec<ForumPost>, OpenAiError> {
-  let mut new_posts = Vec::with_capacity(posts.len());
-  for post in posts {
-    println!("{}", &post.author);
-    if ask_if_voting_post(client, &post.text).await? {
-      println!("Yes");
-      new_posts.push(post.clone());
-    } else {
-      println!("No");
-    }
-  }
-  Ok(new_posts)
 }

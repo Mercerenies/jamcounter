@@ -1,5 +1,5 @@
 
-pub mod classifier;
+pub mod scanner;
 pub mod message;
 
 pub use message::{Message, Role};

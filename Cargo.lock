@@ -817,6 +817,7 @@ dependencies = [
  "reqwest 0.13.2",
  "scraper",
  "serde",
+ "serde_json",
  "tokio",
 ]
 
