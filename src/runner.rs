@@ -8,6 +8,7 @@ use crate::ranked_choice::{Voter, calculate_adjusted_ranked_choice};
 
 use serde::{Deserialize, Serialize};
 use anyhow::anyhow;
+use futures::future::try_join_all;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JamResults {
@@ -81,12 +82,13 @@ async fn read_and_extract_from_posts(llm: &LlmClient, url: &str) -> anyhow::Resu
 }
 
 async fn extract_games_from_posts(llm: &LlmClient, posts: Vec<ForumPost>) -> anyhow::Result<Vec<ExtractedPost>> {
-  let mut extracted = Vec::with_capacity(posts.len());
-  for post in posts {
-    let names = extract_names(llm, &post.text).await?;
-    extracted.push(ExtractedPost { post_author: post.author, ranks: names });
-  }
-  Ok(extracted)
+  try_join_all(
+    posts.into_iter()
+      .map(|post| async move {
+        let names = extract_names(llm, &post.text).await?;
+        Ok(ExtractedPost { post_author: post.author, ranks: names })
+      }),
+  ).await
 }
 
 fn organize_posts_into_voters(cluster_set: &ClusterSet<VideoGame>, posts: &[ExtractedPost]) -> Vec<Voter<usize>> {

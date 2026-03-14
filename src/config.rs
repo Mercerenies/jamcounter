@@ -5,12 +5,18 @@ use serde::Deserialize;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
+  #[serde(default = "default_output_path")]
+  pub output_path: String,
   #[serde(default)]
   pub openai_api_key: String,
   #[serde(default = "default_openai_url")]
   pub openai_url: String,
   #[serde(default = "default_model")]
   pub model: String,
+}
+
+fn default_output_path() -> String {
+  "results.json".into()
 }
 
 fn default_openai_url() -> String {
