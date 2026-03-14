@@ -18,7 +18,7 @@ fn default_openai_url() -> String {
 }
 
 fn default_model() -> String {
-  "gpt-3.5-turbo".into()
+  "gpt-4o-mini".into()
 }
 
 pub fn read_config() -> figment::Result<Config> {
