@@ -1,7 +1,7 @@
 
 use jamcounter::config::read_config;
 use jamcounter::ai::LlmClient;
-use jamcounter::runner::{scrape_posts_from_web, run_vote_counts_pipeline, run_best_ofs_pipeline, JamResults};
+use jamcounter::runner::{scrape_posts_from_web, run_vote_counts_pipeline, run_best_ofs_pipeline, run_best_of_users_pipeline, JamResults};
 
 use itertools::Itertools;
 
@@ -23,10 +23,12 @@ async fn main() -> anyhow::Result<ExitCode> {
   let posts = scrape_posts_from_web(&url).await?;
   let mut ranked_result = run_vote_counts_pipeline(&llm, &posts).await?;
   let best_of_result = run_best_ofs_pipeline(&llm, &config.award_categories, &posts, &mut ranked_result.clusters).await?;
+  let best_of_users_result = run_best_of_users_pipeline(&llm, &config.author_award_categories, &posts).await?;
 
   let compiled_results = JamResults {
     rankings_data: ranked_result,
     best_ofs: best_of_result,
+    best_of_users: best_of_users_result,
   };
 
   println!("Jam Results:");
@@ -36,6 +38,9 @@ async fn main() -> anyhow::Result<ExitCode> {
 
   println!("Best ofs:");
   for (category, winners) in &compiled_results.best_ofs.winners {
+    println!("{}: {}", category, winners.iter().join("; "));
+  }
+  for (category, winners) in &compiled_results.best_of_users.winners {
     println!("{}: {}", category, winners.iter().join("; "));
   }
 

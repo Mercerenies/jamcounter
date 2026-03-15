@@ -1,7 +1,7 @@
 
 use crate::ai::LlmClient;
 use crate::ai::scanner::{extract_names, VideoGame};
-use crate::ai::categories::extract_categories;
+use crate::ai::categories::{extract_categories, extract_author_categories};
 use crate::scraping::{ForumPost, read_and_parse_page};
 use crate::clustering::{ClusterSet, Cluster, cluster_data, add_to_correct_cluster_set};
 use crate::clustering::games::{game_comparison_score, COMPARE_THRESHOLD};
@@ -18,7 +18,8 @@ use std::collections::HashMap;
 pub struct JamResults {
   #[serde(flatten)]
   pub rankings_data: RankingsResults,
-  pub best_ofs: BestOfResults,
+  pub best_ofs: BestOfResults<VideoGame>,
+  pub best_of_users: BestOfResults<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,9 +30,9 @@ pub struct RankingsResults {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BestOfResults {
-  pub posts: Vec<ExtractedBestOfPost>,
-  pub winners: HashMap<String, Vec<VideoGame>>,
+pub struct BestOfResults<T> {
+  pub posts: Vec<ExtractedBestOfPost<T>>,
+  pub winners: HashMap<String, Vec<T>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Hash, PartialEq, Eq)]
@@ -42,10 +43,10 @@ pub struct ExtractedPost {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ExtractedBestOfPost {
+pub struct ExtractedBestOfPost<T> {
   #[serde(alias = "author")]
   pub post_author: String,
-  pub votes: HashMap<String, VideoGame>,
+  pub votes: HashMap<String, T>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,7 +96,7 @@ pub async fn run_vote_counts_pipeline(llm: &LlmClient, posts: &[ForumPost]) -> a
   })
 }
 
-pub async fn run_best_ofs_pipeline(llm: &LlmClient, categories: &[String], posts: &[ForumPost], clusters: &mut ClusterSet<VideoGame>) -> anyhow::Result<BestOfResults> {
+pub async fn run_best_ofs_pipeline(llm: &LlmClient, categories: &[String], posts: &[ForumPost], clusters: &mut ClusterSet<VideoGame>) -> anyhow::Result<BestOfResults<VideoGame>> {
   let posts = extract_bestofs_from_posts(llm, categories, posts.to_vec()).await?;
 
   // Add any games missing from the cluster set to the cluster set.
@@ -116,6 +117,22 @@ pub async fn run_best_ofs_pipeline(llm: &LlmClient, categories: &[String], posts
         .cloned()
         .collect();
 
+      (category, winners_for_category)
+    })
+    .collect();
+
+  Ok(BestOfResults { posts, winners })
+}
+
+pub async fn run_best_of_users_pipeline(llm: &LlmClient, categories: &[String], posts: &[ForumPost]) -> anyhow::Result<BestOfResults<String>> {
+  let posts = extract_bestof_users_from_posts(llm, categories, posts.to_vec()).await?;
+
+  let voters: Vec<_> = posts.iter().map(|post| CategoryVoter { votes: post.votes.clone() }).collect();
+  let winners: HashMap<String, Vec<String>> = categories.iter()
+    .cloned()
+    .map(|category| {
+      let vote_counts: HashMap<String, usize> = voters.iter().flat_map(|voter| voter.votes.get(&category).cloned()).counts();
+      let winners_for_category = vote_counts.keys().cloned().max_set_by_key(|cluster_idx| vote_counts[cluster_idx]);
       (category, winners_for_category)
     })
     .collect();
@@ -149,11 +166,26 @@ async fn extract_games_from_posts(llm: &LlmClient, posts: Vec<ForumPost>) -> any
   ).await
 }
 
-async fn extract_bestofs_from_posts(llm: &LlmClient, categories: &[String], posts: Vec<ForumPost>) -> anyhow::Result<Vec<ExtractedBestOfPost>> {
+async fn extract_bestofs_from_posts(llm: &LlmClient, categories: &[String], posts: Vec<ForumPost>) -> anyhow::Result<Vec<ExtractedBestOfPost<VideoGame>>> {
   try_join_all(
     posts.into_iter()
       .map(|post| async move {
         let votes = extract_categories(llm, categories, &post.text).await?;
+        Ok(ExtractedBestOfPost { post_author: post.author, votes })
+      }),
+  ).await
+}
+
+async fn extract_bestof_users_from_posts(llm: &LlmClient, categories: &[String], posts: Vec<ForumPost>) -> anyhow::Result<Vec<ExtractedBestOfPost<String>>> {
+  try_join_all(
+    posts.into_iter()
+      .map(|post| async move {
+        let votes = extract_author_categories(llm, categories, &post.text).await?;
+        let votes = votes.into_iter()
+          // The AI picks up self as "best reviewer" a weird amount of
+          // the time, so clean that up.
+          .filter(|(_category, vote)| *vote != post.author)
+          .collect();
         Ok(ExtractedBestOfPost { post_author: post.author, votes })
       }),
   ).await
@@ -170,7 +202,7 @@ fn organize_posts_into_voters(cluster_set: &ClusterSet<VideoGame>, posts: &[Extr
     .collect()
 }
 
-fn organize_best_of_posts_into_voters(cluster_set: &ClusterSet<VideoGame>, posts: &[ExtractedBestOfPost]) -> Vec<CategoryVoter<usize>> {
+fn organize_best_of_posts_into_voters(cluster_set: &ClusterSet<VideoGame>, posts: &[ExtractedBestOfPost<VideoGame>]) -> Vec<CategoryVoter<usize>> {
   let game_to_cluster_id = |game: &VideoGame| cluster_set.get_cluster_index(game).unwrap();
 
   posts

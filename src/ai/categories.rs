@@ -55,3 +55,40 @@ pub async fn extract_categories(client: &LlmClient, categories: &[String], post_
 
   Ok(response)
 }
+
+pub async fn extract_author_categories(client: &LlmClient, categories: &[String], post_content: &str) -> anyhow::Result<HashMap<String, String>> {
+  const BASE_USER_MESSAGE: &str = r#"
+    You will be provided with a forum post which consists of plaintext content.
+    This post contains votes for a video game contest. You will focus on the "Best Of" categories.
+    Ignore the base rankings and any additional comments, reviews, or notes, and focus only on the
+    "Best Of" categories. Ignore categories which are awarding games and focus only on those ranking
+    users/authors.
+
+    Provide your output as valid JSON. Do not output ANYTHING other than valid JSON.
+    ```
+    {
+      <category>: <user>,
+      <category>: <user>,
+      ...
+    }
+    ```
+
+    Do NOT output null for missing data. Simply omit the key from the output entirely in that case.
+
+    If the post does not attempt to award any users, just ignore its contents and return "{}".
+  "#;
+
+  let categories_message = format!("The specific categories you are looking for are: {}", categories.join(", "));
+
+  let messages = [
+    Message::system(SYSTEM_MESSAGE),
+    Message::user(BASE_USER_MESSAGE),
+    Message::user(&categories_message),
+    Message::user(post_content),
+  ];
+  let response = client.chat(&messages).await?.replace("```json", "").replace("```", "");
+  let response: HashMap<String, String> = serde_json::from_str(&response)
+    .with_context(|| format!("Response: {response}"))?;
+
+  Ok(response)
+}
