@@ -3,18 +3,27 @@ pub mod games;
 pub mod text;
 
 use ordered_float::OrderedFloat;
+use serde::{Deserialize, Serialize};
 
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::ops::{Index, Range};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(from = "ClusterSetDeserializeHelper<T>", bound(deserialize = "T: Clone + Eq + Hash + Deserialize<'de>"))]
 pub struct ClusterSet<T> {
   clusters: Vec<Cluster<T>>,
+  #[serde(skip)]
   clusters_by_contents: HashMap<T, usize>,
 }
 
-#[derive(Debug)]
+#[derive(Deserialize)]
+struct ClusterSetDeserializeHelper<T> {
+  clusters: Vec<Cluster<T>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct Cluster<T> {
   values: Vec<T>,
 }
@@ -106,6 +115,20 @@ impl<T> Index<usize> for ClusterSet<T> {
 
   fn index(&self, index: usize) -> &Self::Output {
     &self.clusters[index]
+  }
+}
+
+impl<T: Clone + Eq + Hash> From<ClusterSetDeserializeHelper<T>> for ClusterSet<T> {
+  fn from(helper: ClusterSetDeserializeHelper<T>) -> Self {
+    let clusters_by_contents = helper.clusters.iter()
+      .enumerate()
+      .flat_map(|(i, cluster)| cluster.iter().map(move |v| (v.clone(), i)))
+      .collect();
+
+    Self {
+      clusters: helper.clusters,
+      clusters_by_contents,
+    }
   }
 }
 

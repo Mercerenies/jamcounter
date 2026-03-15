@@ -1,4 +1,5 @@
 
+pub mod categories;
 pub mod scanner;
 pub mod message;
 
@@ -8,6 +9,13 @@ use crate::config::Config;
 
 use openai::{Credentials, OpenAiError};
 use openai::chat::{ChatCompletion, ChatCompletionMessage};
+
+const SYSTEM_MESSAGE: &str = r"
+You are a helpful assistant. The user will provide you
+with instructions and text. Follow the instructions. Provide
+output using the exact format specified. Do not provide
+any additional output other than what is requested.
+";
 
 #[derive(Debug)]
 pub struct LlmClient {

@@ -1,5 +1,5 @@
 
-use super::{LlmClient, Message};
+use super::{SYSTEM_MESSAGE, LlmClient, Message};
 
 use anyhow::Context;
 use serde::{Serialize, Deserialize};
@@ -9,13 +9,6 @@ pub struct VideoGame {
   pub title: String,
   pub author: String,
 }
-
-const SYSTEM_MESSAGE: &str = r"
-You are a helpful assistant. The user will provide you
-with instructions and text. Follow the instructions. Provide
-output using the exact format specified. Do not provide
-any additional output other than what is requested.
-";
 
 pub async fn extract_names(client: &LlmClient, post_content: &str) -> anyhow::Result<Vec<VideoGame>> {
   const BASE_USER_MESSAGE: &str = r#"
@@ -59,7 +52,8 @@ pub async fn extract_names(client: &LlmClient, post_content: &str) -> anyhow::Re
   Ok(response)
 }
 
-fn remove_author_name_from_title(mut game: VideoGame) -> VideoGame {
+// Cleanup function for AI
+pub(super) fn remove_author_name_from_title(mut game: VideoGame) -> VideoGame {
   if game.title.ends_with(format!(" by {}", game.author).as_str()) {
     game.title.truncate(game.title.len() - game.author.len() - 4);
   }

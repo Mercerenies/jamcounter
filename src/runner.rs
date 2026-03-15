@@ -13,6 +13,7 @@ use futures::future::try_join_all;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JamResults {
   pub posts: Vec<ExtractedPost>,
+  pub clusters: ClusterSet<VideoGame>,
   pub final_rankings: Vec<RankedGame>,
 }
 
@@ -60,6 +61,7 @@ pub async fn run_vote_counts_pipeline(llm: &LlmClient, posts: &[ForumPost]) -> a
 
   Ok(JamResults {
     posts: games,
+    clusters: cluster_set,
     final_rankings: ranked_games,
   })
 }
