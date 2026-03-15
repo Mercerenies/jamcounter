@@ -1,20 +1,37 @@
 
 use crate::ai::LlmClient;
 use crate::ai::scanner::{extract_names, VideoGame};
+use crate::ai::categories::extract_categories;
 use crate::scraping::{ForumPost, read_and_parse_page};
-use crate::clustering::{ClusterSet, Cluster, cluster_data};
+use crate::clustering::{ClusterSet, Cluster, cluster_data, add_to_correct_cluster_set};
 use crate::clustering::games::{game_comparison_score, COMPARE_THRESHOLD};
 use crate::ranked_choice::{Voter, calculate_adjusted_ranked_choice};
 
 use serde::{Deserialize, Serialize};
 use anyhow::anyhow;
 use futures::future::try_join_all;
+use itertools::Itertools;
+
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JamResults {
+  #[serde(flatten)]
+  pub rankings_data: RankingsResults,
+  pub best_ofs: BestOfResults,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RankingsResults {
   pub posts: Vec<ExtractedPost>,
   pub clusters: ClusterSet<VideoGame>,
   pub final_rankings: Vec<RankedGame>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BestOfResults {
+  pub posts: Vec<ExtractedBestOfPost>,
+  pub winners: HashMap<String, Vec<VideoGame>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Hash, PartialEq, Eq)]
@@ -24,11 +41,23 @@ pub struct ExtractedPost {
   pub ranks: Vec<VideoGame>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExtractedBestOfPost {
+  #[serde(alias = "author")]
+  pub post_author: String,
+  pub votes: HashMap<String, VideoGame>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RankedGame {
   #[serde(flatten)]
   pub game: VideoGame,
   pub score: f64,
+}
+
+#[derive(Debug, Clone)]
+pub struct CategoryVoter<T> {
+  pub votes: HashMap<String, T>,
 }
 
 impl RankedGame {
@@ -41,12 +70,12 @@ impl RankedGame {
   }
 }
 
-pub async fn run_vote_counts_pipeline(llm: &LlmClient, posts: &[ForumPost]) -> anyhow::Result<JamResults> {
-  let games = extract_games_from_posts(llm, posts.to_vec()).await?;
-  let flattened_games = games.clone().into_iter().flat_map(|e| e.ranks).collect::<Vec<_>>();
+pub async fn run_vote_counts_pipeline(llm: &LlmClient, posts: &[ForumPost]) -> anyhow::Result<RankingsResults> {
+  let posts = extract_games_from_posts(llm, posts.to_vec()).await?;
+  let flattened_games = posts.clone().into_iter().flat_map(|e| e.ranks).collect::<Vec<_>>();
   let cluster_set = cluster_data(flattened_games, game_comparison_score, COMPARE_THRESHOLD);
   let all_entry_ids = cluster_set.cluster_indices().collect::<Vec<_>>();
-  let voters = organize_posts_into_voters(&cluster_set, &games);
+  let voters = organize_posts_into_voters(&cluster_set, &posts);
   let ranked_choice = calculate_adjusted_ranked_choice(&all_entry_ids, &voters);
 
   let mut ranked_games: Vec<_> = cluster_set.clusters()
@@ -59,11 +88,39 @@ pub async fn run_vote_counts_pipeline(llm: &LlmClient, posts: &[ForumPost]) -> a
     .collect();
   ranked_games.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
 
-  Ok(JamResults {
-    posts: games,
+  Ok(RankingsResults {
+    posts,
     clusters: cluster_set,
     final_rankings: ranked_games,
   })
+}
+
+pub async fn run_best_ofs_pipeline(llm: &LlmClient, categories: &[String], posts: &[ForumPost], clusters: &mut ClusterSet<VideoGame>) -> anyhow::Result<BestOfResults> {
+  let posts = extract_bestofs_from_posts(llm, categories, posts.to_vec()).await?;
+
+  // Add any games missing from the cluster set to the cluster set.
+  for post in &posts {
+    for game in post.votes.values() {
+      add_to_correct_cluster_set(clusters, game.clone(), game_comparison_score, COMPARE_THRESHOLD);
+    }
+  }
+
+  let voters = organize_best_of_posts_into_voters(&clusters, &posts);
+  let winners: HashMap<String, Vec<VideoGame>> = categories.iter()
+    .cloned()
+    .map(|category| {
+      let vote_counts: HashMap<usize, usize> = voters.iter().flat_map(|voter| voter.votes.get(&category).copied()).counts();
+      let winners_for_category = vote_counts.keys().copied().max_set_by_key(|cluster_idx| vote_counts[cluster_idx]);
+      let winners_for_category = winners_for_category.into_iter()
+        .map(|cluster_idx| choose_representative_entry_for_game(&clusters[cluster_idx]))
+        .cloned()
+        .collect();
+
+      (category, winners_for_category)
+    })
+    .collect();
+
+  Ok(BestOfResults { posts, winners })
 }
 
 pub async fn scrape_posts_from_web(url: &str) -> anyhow::Result<Vec<ForumPost>> {
@@ -92,6 +149,16 @@ async fn extract_games_from_posts(llm: &LlmClient, posts: Vec<ForumPost>) -> any
   ).await
 }
 
+async fn extract_bestofs_from_posts(llm: &LlmClient, categories: &[String], posts: Vec<ForumPost>) -> anyhow::Result<Vec<ExtractedBestOfPost>> {
+  try_join_all(
+    posts.into_iter()
+      .map(|post| async move {
+        let votes = extract_categories(llm, categories, &post.text).await?;
+        Ok(ExtractedBestOfPost { post_author: post.author, votes })
+      }),
+  ).await
+}
+
 fn organize_posts_into_voters(cluster_set: &ClusterSet<VideoGame>, posts: &[ExtractedPost]) -> Vec<Voter<usize>> {
   let game_to_cluster_id = |game: &VideoGame| cluster_set.get_cluster_index(game).unwrap();
 
@@ -99,6 +166,17 @@ fn organize_posts_into_voters(cluster_set: &ClusterSet<VideoGame>, posts: &[Extr
     .iter()
     .map(|post| Voter {
       rankings: post.ranks.iter().map(game_to_cluster_id).collect(),
+    })
+    .collect()
+}
+
+fn organize_best_of_posts_into_voters(cluster_set: &ClusterSet<VideoGame>, posts: &[ExtractedBestOfPost]) -> Vec<CategoryVoter<usize>> {
+  let game_to_cluster_id = |game: &VideoGame| cluster_set.get_cluster_index(game).unwrap();
+
+  posts
+    .iter()
+    .map(|post| CategoryVoter {
+      votes: post.votes.iter().map(|(k, v)| (k.clone(), game_to_cluster_id(v))).collect(),
     })
     .collect()
 }

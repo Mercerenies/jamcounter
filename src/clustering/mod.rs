@@ -135,6 +135,17 @@ impl<T: Clone + Eq + Hash> From<ClusterSetDeserializeHelper<T>> for ClusterSet<T
 pub fn cluster_data<T, F>(data: Vec<T>, mut cmp: F, threshold: f64) -> ClusterSet<T>
 where T: Eq + Hash + Clone,
       F: FnMut(&T, &T) -> f64 {
+  let mut set = ClusterSet::new();
+  for elem in data {
+    add_to_correct_cluster_set(&mut set, elem, &mut cmp, threshold);
+  }
+
+  set
+}
+
+pub fn add_to_correct_cluster_set<T, F>(cluster_set: &mut ClusterSet<T>, value: T, mut cmp: F, threshold: f64)
+where T: Eq + Hash + Clone,
+      F: FnMut(&T, &T) -> f64 {
   let mut compare_to_cluster = |value: &T, cluster: &Cluster<T>| -> f64 {
     cluster.iter()
       .map(|elem| OrderedFloat(cmp(value, elem)))
@@ -143,22 +154,17 @@ where T: Eq + Hash + Clone,
       .unwrap_or(0.0)
   };
 
-  let mut set = ClusterSet::new();
-  for elem in data {
-    if set.contains(&elem) {
-      continue;
-    }
-
-    let best = set.clusters()
-      .map(|(idx, cluster)| (idx, compare_to_cluster(&elem, cluster)))
-      .max_by_key(|(_, v)| OrderedFloat(*v));
-    if let Some((best_idx, best_value)) = best && best_value > threshold {
-      set.add_to_cluster(best_idx, elem);
-    } else {
-      let new_cluster_idx = set.append_new_cluster();
-      set.add_to_cluster(new_cluster_idx, elem);
-    }
+  if cluster_set.contains(&value) {
+    return;
   }
 
-  set
+  let best = cluster_set.clusters()
+    .map(|(idx, cluster)| (idx, compare_to_cluster(&value, cluster)))
+    .max_by_key(|(_, v)| OrderedFloat(*v));
+  if let Some((best_index, best_value)) = best && best_value > threshold {
+    cluster_set.add_to_cluster(best_index, value);
+  } else {
+    let new_cluster_idx = cluster_set.append_new_cluster();
+    cluster_set.add_to_cluster(new_cluster_idx, value);
+  }
 }

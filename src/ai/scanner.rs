@@ -4,10 +4,18 @@ use super::{SYSTEM_MESSAGE, LlmClient, Message};
 use anyhow::Context;
 use serde::{Serialize, Deserialize};
 
+use std::fmt::{self, Display};
+
 #[derive(Debug, Clone, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct VideoGame {
   pub title: String,
   pub author: String,
+}
+
+impl Display for VideoGame {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "{} by {}", self.title, self.author)
+  }
 }
 
 pub async fn extract_names(client: &LlmClient, post_content: &str) -> anyhow::Result<Vec<VideoGame>> {
