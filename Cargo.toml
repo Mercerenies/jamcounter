@@ -6,7 +6,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.102"
-figment = { version = "0.10.19", features = ["env"] }
+figment = { version = "0.10.19", features = ["env", "toml"] }
 futures = "0.3.32"
 openai = "1.1.1"
 ordered-float = "5.1.0"

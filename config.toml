@@ -1,0 +1,6 @@
+
+output_path = "results.json"
+voting_post_url = 'https://forum.gamemaker.io/index.php?threads/the-corntastic-gmc-jam-57-voting-topic.121502/'
+
+award_categories = ["Best use of Theme", "Best Concept", "Best Story", "Best Visuals", "Best Audio", "Best User Experience"]
+author_award_categories = ["Best Reviewer"]

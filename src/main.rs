@@ -1,9 +1,8 @@
 
 use jamcounter::config::read_config;
 use jamcounter::ai::LlmClient;
-use jamcounter::runner::run_vote_counts_pipeline;
+use jamcounter::runner::{scrape_posts_from_web, run_vote_counts_pipeline};
 
-use std::env;
 use std::fs::{self, File};
 use std::process::ExitCode;
 
@@ -17,14 +16,10 @@ async fn main() -> anyhow::Result<ExitCode> {
   if fs::exists(&config.output_path)? {
     anyhow::bail!("Output file already exists: {}", config.output_path);
   }
+  let url = &config.voting_post_url;
 
-  let args = env::args().collect::<Vec<_>>();
-  if args.len() < 2 {
-    eprintln!("Usage: jamscraper <url>");
-    return Ok(ExitCode::FAILURE);
-  }
-  let url = &args[1];
-  let result = run_vote_counts_pipeline(&llm, url).await?;
+  let posts = scrape_posts_from_web(&url).await?;
+  let result = run_vote_counts_pipeline(&llm, &posts).await?;
 
   println!("Jam Results");
   for (i, game) in result.final_rankings.iter().enumerate() {

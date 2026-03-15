@@ -40,8 +40,8 @@ impl RankedGame {
   }
 }
 
-pub async fn run_vote_counts_pipeline(llm: &LlmClient, vote_page_url: &str) -> anyhow::Result<JamResults> {
-  let games = read_and_extract_from_posts(&llm, vote_page_url).await?;
+pub async fn run_vote_counts_pipeline(llm: &LlmClient, posts: &[ForumPost]) -> anyhow::Result<JamResults> {
+  let games = extract_games_from_posts(llm, posts.to_vec()).await?;
   let flattened_games = games.clone().into_iter().flat_map(|e| e.ranks).collect::<Vec<_>>();
   let cluster_set = cluster_data(flattened_games, game_comparison_score, COMPARE_THRESHOLD);
   let all_entry_ids = cluster_set.cluster_indices().collect::<Vec<_>>();
@@ -64,7 +64,7 @@ pub async fn run_vote_counts_pipeline(llm: &LlmClient, vote_page_url: &str) -> a
   })
 }
 
-async fn read_and_extract_from_posts(llm: &LlmClient, url: &str) -> anyhow::Result<Vec<ExtractedPost>> {
+pub async fn scrape_posts_from_web(url: &str) -> anyhow::Result<Vec<ForumPost>> {
   let posts = read_and_parse_page(url).await?;
   let mut posts = posts.into_iter()
     .map(|opt_post| opt_post.ok_or_else(|| anyhow!("Failed to parse post")))
@@ -77,8 +77,7 @@ async fn read_and_extract_from_posts(llm: &LlmClient, url: &str) -> anyhow::Resu
     post.text = post.text.chars().take(6_000).collect();
   }
 
-  let games = extract_games_from_posts(&llm, posts).await?;
-  Ok(games)
+  Ok(posts)
 }
 
 async fn extract_games_from_posts(llm: &LlmClient, posts: Vec<ForumPost>) -> anyhow::Result<Vec<ExtractedPost>> {

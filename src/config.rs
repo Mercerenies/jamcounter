@@ -1,6 +1,6 @@
 
 use figment::Figment;
-use figment::providers::Env;
+use figment::providers::{Format, Env, Toml};
 use serde::Deserialize;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -13,6 +13,9 @@ pub struct Config {
   pub openai_url: String,
   #[serde(default = "default_model")]
   pub llm_model: String,
+  pub voting_post_url: String,
+  pub award_categories: Vec<String>,
+  pub author_award_categories: Vec<String>,
 }
 
 fn default_output_path() -> String {
@@ -29,6 +32,7 @@ fn default_model() -> String {
 
 pub fn read_config() -> figment::Result<Config> {
   Figment::new()
+    .merge(Toml::file("config.toml"))
     .merge(Env::prefixed("JAM_"))
     .extract::<Config>()
 }
